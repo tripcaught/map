@@ -2,50 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  >
-
-  <title>Camera Map Overlay</title>
-
-  <style>
-    html,
-    body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: black;
-    }
-
-    #camera {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      z-index: 1;
-    }
-
-    #map {
-      position: fixed;
-      left: 50%;
-      top: 50%;
-      width: 90vmin;
-      height: 90vmin;
-      transform: translate(-50%, -50%);
-      opacity: 0.55;<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
 
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
 
-  <title>Horizontal Camera Map Overlay</title>
+  <title>Floor-Level Map Camera Overlay</title>
 
   <style>
     html,
@@ -54,50 +17,45 @@
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background: black;
+      background: #000;
     }
 
-    /*
-      Live rear-camera video.
-    */
     #camera {
       position: fixed;
       inset: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
+      background: #000;
       z-index: 1;
-      background: black;
     }
 
     /*
       The map is three times larger than the original 90vmin size.
-      270vmin may extend well beyond the screen, which is intentional.
     */
     #mapContainer {
       position: fixed;
+      z-index: 2;
       left: 50%;
       top: 62%;
 
       width: 270vmin;
       height: 270vmin;
 
-      z-index: 2;
+      opacity: 0.6;
       pointer-events: none;
 
-      /*
-        This creates a 3D projection for the flat map.
-        rotateX makes the map appear horizontal on the floor.
-        rotateY(-26deg) rotates it around the vertical Y axis.
-      */
       transform-style: preserve-3d;
       perspective: 900px;
+
+      /*
+        rotateX makes the map appear to lie on the floor.
+        rotateY applies the requested -26-degree rotation.
+      */
       transform:
         translate(-50%, -50%)
         rotateX(68deg)
         rotateY(-26deg);
-
-      opacity: 0.6;
     }
 
     #map {
@@ -109,27 +67,41 @@
 
     #controls {
       position: fixed;
-      z-index: 3;
+      z-index: 10;
       left: 0;
       right: 0;
-      bottom: 25px;
+      bottom: 24px;
+      padding: 0 16px;
       text-align: center;
+      pointer-events: auto;
     }
 
-    button {
-      padding: 12px 18px;
+    #startButton {
+      display: inline-block;
+      padding: 14px 22px;
       border: 0;
       border-radius: 8px;
       background: #1976d2;
       color: white;
-      font-size: 16px;
+      font: 16px sans-serif;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    #startButton:disabled {
+      opacity: 0.6;
+      cursor: wait;
     }
 
     #message {
-      margin-top: 10px;
+      max-width: 90%;
+      margin: 12px auto 0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.7);
       color: white;
-      font-family: sans-serif;
-      font-size: 14px;
+      font: 14px sans-serif;
     }
   </style>
 </head>
@@ -151,36 +123,89 @@
   </div>
 
   <div id="controls">
-    <button id="startButton">
+    <button
+      id="startButton"
+      type="button"
+    >
       Start Camera
     </button>
 
-    <div id="message"></div>
+    <div id="message">
+      Tap Start Camera and allow camera access.
+    </div>
   </div>
 
   <script>
+    "use strict";
+
     const camera = document.getElementById("camera");
     const mapContainer = document.getElementById("mapContainer");
     const startButton = document.getElementById("startButton");
     const message = document.getElementById("message");
 
     let cameraStream = null;
+    let orientationStarted = false;
 
     /*
-      Current phone orientation values.
+      These values are used to apply small orientation adjustments.
     */
     let heading = 0;
     let pitch = 0;
     let roll = 0;
 
+    /*
+      Attach the click listener after the page has loaded.
+      This preserves the required user gesture for camera permission.
+    */
     startButton.addEventListener("click", startCamera);
 
     async function startCamera() {
+      startButton.disabled = true;
+      setMessage("Requesting camera access...");
+
+      /*
+        Camera access only works from HTTPS, localhost, or a secure
+        browser environment.
+      */
+      if (
+        location.protocol !== "https:" &&
+        location.hostname !== "localhost" &&
+        location.hostname !== "127.0.0.1"
+      ) {
+        setMessage(
+          "Camera access requires HTTPS. Open this page using its GitHub Pages HTTPS address."
+        );
+
+        startButton.disabled = false;
+        return;
+      }
+
+      if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+      ) {
+        setMessage(
+          "This browser does not support camera access."
+        );
+
+        startButton.disabled = false;
+        return;
+      }
+
       try {
+        /*
+          Request the rear-facing camera.
+        */
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: {
               ideal: "environment"
+            },
+            width: {
+              ideal: 1920
+            },
+            height: {
+              ideal: 1080
             }
           },
           audio: false
@@ -189,183 +214,63 @@
         camera.srcObject = cameraStream;
 
         /*
-          iOS requires explicit permission before orientation data
-          can be used.
+          Wait until the video element has received camera data.
         */
-        if (
-          typeof DeviceOrientationEvent !== "undefined" &&
-          typeof DeviceOrientationEvent.requestPermission === "function"
-        ) {
-          const permission =
-            await DeviceOrientationEvent.requestPermission();
-
-          if (permission !== "granted") {
-            message.textContent =
-              "Motion permission was not granted.";
-          } else {
-            startOrientationTracking();
-          }
-        } else {
-          startOrientationTracking();
-        }
-
-        startButton.style.display = "none";
-        message.textContent =
-          "Map overlay active. Point the camera toward the floor.";
-
-      } catch (error) {
-        console.error("Camera error:", error);
-
-        message.textContent =
-          "Camera access failed. Use HTTPS and allow camera access.";
-      }
-    }
-
-    function startOrientationTracking() {
-      window.addEventListener(
-        "deviceorientation",
-        handleOrientation,
-        true
-      );
-    }
-
-    function handleOrientation(event) {
-      /*
-        alpha: compass heading, 0–360 degrees
-        beta: front/back tilt
-        gamma: left/right tilt
-      */
-      heading = event.alpha || 0;
-      pitch = event.beta || 0;
-      roll = event.gamma || 0;
-
-      /*
-        The map remains approximately horizontal at floor level.
-
-        rotateX(68deg):
-          Makes the map appear to lie on the floor.
-
-        rotateY(-26deg):
-          Applies the requested Y-axis rotation.
-
-        rotateZ(-heading):
-          Rotates the overlay in response to phone compass heading.
-
-        The small pitch and roll adjustments allow the map to respond
-        to movement of the phone.
-      */
-      mapContainer.style.transform = `
-        translate(-50%, -50%)
-        rotateX(${68 + (pitch - 45) * 0.15}deg)
-        rotateY(-26deg)
-        rotateZ(${-heading + roll * 0.15}deg)
-      `;
-    }
-
-    /*
-      Stop the camera if the page is hidden.
-    */
-    document.addEventListener("visibilitychange", () => {
-      if (
-        document.visibilityState === "hidden" &&
-        cameraStream
-      ) {
-        cameraStream.getTracks().forEach(track => {
-          track.stop();
-        });
-      }
-    });
-  </script>
-</body>
-</html>
-
-      z-index: 2;
-      pointer-events: none;
-    }
-
-    #controls {
-      position: fixed;
-      z-index: 3;
-      left: 0;
-      right: 0;
-      bottom: 25px;
-      text-align: center;
-    }
-
-    button {
-      padding: 12px 18px;
-      font-size: 16px;
-    }
-  </style>
-</head>
-
-<body>
-  <video id="camera" autoplay playsinline></video>
-
-  <img
-    id="map"
-    src="./worldmap.svg"
-    alt="Map overlay"
-  >
-
-  <div id="controls">
-    <button id="startButton">
-      Start Camera
-    </button>
-  </div>
-
-  <script>
-    const camera = document.getElementById("camera");
-    const map = document.getElementById("map");
-    const startButton = document.getElementById("startButton");
-
-    let heading = 0;
-    let pitch = 0;
-    let roll = 0;
-
-    startButton.addEventListener("click", async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: {
-              ideal: "environment"
-            }
-          },
-          audio: false
-        });
-
-        camera.srcObject = stream;
+        await camera.play();
 
         /*
-          iPhones require permission to access motion/orientation data.
+          iOS requires a separate permission request for motion data.
         */
-        if (
-          typeof DeviceOrientationEvent !== "undefined" &&
-          typeof DeviceOrientationEvent.requestPermission === "function"
-        ) {
-          const permission =
-            await DeviceOrientationEvent.requestPermission();
+        await requestOrientationPermission();
 
-          if (permission !== "granted") {
-            alert("Motion permission was not granted.");
-            return;
-          }
+        setMessage(
+          "Camera active. Point your phone toward the floor."
+        );
+
+        startButton.style.display = "none";
+
+      } catch (error) {
+        console.error("Camera startup failed:", error);
+
+        showCameraError(error);
+
+        startButton.disabled = false;
+      }
+    }
+
+    async function requestOrientationPermission() {
+      if (
+        typeof DeviceOrientationEvent === "undefined"
+      ) {
+        return;
+      }
+
+      if (
+        typeof DeviceOrientationEvent.requestPermission ===
+        "function"
+      ) {
+        const permission =
+          await DeviceOrientationEvent.requestPermission();
+
+        if (permission !== "granted") {
+          setMessage(
+            "Camera is active, but motion permission was denied."
+          );
+
+          return;
         }
+      }
 
+      if (!orientationStarted) {
         window.addEventListener(
           "deviceorientation",
           handleOrientation,
           true
         );
 
-        startButton.style.display = "none";
-      } catch (error) {
-        console.error(error);
-        alert(
-          "Camera access failed. Make sure the page is served over HTTPS."
-        );
+        orientationStarted = true;
       }
-    });
+    }
 
     function handleOrientation(event) {
       heading = event.alpha || 0;
@@ -373,17 +278,99 @@
       roll = event.gamma || 0;
 
       /*
-        This is only a visual approximation. It does not create
-        true world-locked AR.
+        68 degrees makes the image appear close to horizontal.
+
+        -26 degrees is the requested Y-axis rotation.
+
+        The small pitch and roll adjustments make the overlay
+        respond slightly as the phone moves.
       */
-      map.style.transform = `
+      const floorAngle =
+        68 + ((pitch - 45) * 0.15);
+
+      const sidewaysAngle =
+        -heading + (roll * 0.15);
+
+      mapContainer.style.transform = `
         translate(-50%, -50%)
-        rotate(${-heading}deg)
-        perspective(500px)
-        rotateX(${pitch - 45}deg)
-        rotateZ(${roll}deg)
+        rotateX(${floorAngle}deg)
+        rotateY(-26deg)
+        rotateZ(${sidewaysAngle}deg)
       `;
     }
+
+    function showCameraError(error) {
+      if (!error) {
+        setMessage(
+          "Unable to start the camera."
+        );
+        return;
+      }
+
+      switch (error.name) {
+        case "NotAllowedError":
+        case "PermissionDeniedError":
+          setMessage(
+            "Camera permission was denied. Allow camera access in your browser settings, then reload the page."
+          );
+          break;
+
+        case "NotFoundError":
+        case "DevicesNotFoundError":
+          setMessage(
+            "No camera was found on this device."
+          );
+          break;
+
+        case "NotReadableError":
+        case "TrackStartError":
+          setMessage(
+            "The camera is already being used by another application."
+          );
+          break;
+
+        case "OverconstrainedError":
+          setMessage(
+            "The requested camera configuration is unavailable."
+          );
+          break;
+
+        case "SecurityError":
+          setMessage(
+            "The browser blocked camera access for security reasons. Use the HTTPS GitHub Pages URL."
+          );
+          break;
+
+        default:
+          setMessage(
+            "Camera error: " +
+            (error.message || error.name)
+          );
+      }
+    }
+
+    function setMessage(text) {
+      message.textContent = text;
+    }
+
+    /*
+      Stop the camera when the page is hidden.
+    */
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (
+          document.visibilityState === "hidden" &&
+          cameraStream
+        ) {
+          cameraStream.getTracks().forEach(track => {
+            track.stop();
+          });
+
+          cameraStream = null;
+        }
+      }
+    );
   </script>
 </body>
 </html>
