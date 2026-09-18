@@ -26,9 +26,39 @@
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background: #000;
-      font-family: -apple-system, BlinkMacSystemFont,
-        "Segoe UI", Roboto, sans-serif;
+      background: transparent;
+    }
+
+    /*
+      AR.js creates a video element for the camera.
+      Force it to fill the screen.
+    */
+    #arjs-video,
+    body > video {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: cover !important;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      z-index: 0 !important;
+    }
+
+    /*
+      Keep the A-Frame canvas above the camera video,
+      while retaining transparency so the video remains visible.
+    */
+    .a-canvas {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 1 !important;
+      background: transparent !important;
     }
 
     #permissionShield {
@@ -44,6 +74,8 @@
       color: #fff;
       text-align: center;
       background: #111;
+      font-family: -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, sans-serif;
     }
 
     #permissionShield h2 {
@@ -91,10 +123,6 @@
       background: rgba(0, 122, 255, 0.9);
     }
 
-    /*
-      This diagnostic label helps confirm that the page JavaScript
-      is running. It is not part of the AR scene.
-    */
     #debugMessage {
       position: fixed;
       top: 10px;
@@ -103,9 +131,9 @@
 
       display: none;
       padding: 8px 10px;
-      color: white;
+      color: #fff;
       background: rgba(0, 0, 0, 0.65);
-      font-size: 12px;
+      font: 12px monospace;
     }
   </style>
 </head>
@@ -129,14 +157,16 @@
     </button>
   </div>
 
-  <div id="debugMessage">
-    Initializing...
-  </div>
+  <div id="debugMessage"></div>
 
   <a-scene
     embedded
     vr-mode-ui="enabled: false"
-    renderer="alpha: true; antialias: true"
+    renderer="
+      alpha: true;
+      antialias: true;
+      clearColor: #00000000;
+    "
     arjs="
       sourceType: webcam;
       debugUIEnabled: false;
@@ -153,12 +183,7 @@
         crossorigin="anonymous">
     </a-assets>
 
-    <!--
-      RED DIAGNOSTIC CUBE
-
-      If you can see this cube, A-Frame and the camera
-      are rendering correctly.
-    -->
+    <!-- Diagnostic object -->
     <a-box
       id="testCube"
       position="0 0 -3"
@@ -169,16 +194,11 @@
       color="#ff0000">
     </a-box>
 
-    <!--
-      Small SVG test map.
-
-      The map is deliberately small and placed three meters
-      in front of the camera. Do not use 175m dimensions
-      until this test works.
-    -->
+    <!-- Map initially placed in front of the camera -->
     <a-entity
       id="mapTurntable"
-      position="0 0 -3">
+      position="0 0 -3"
+      rotation="0 0 0">
 
       <a-plane
         id="mapPlane"
@@ -197,7 +217,6 @@
 
     </a-entity>
 
-    <!-- Camera entity required by the JavaScript -->
     <a-camera
       id="userCamera"
       position="0 0 0"
@@ -238,22 +257,17 @@
     }
 
     /*
-      Request permissions only.
-
-      There is intentionally no manual call to:
-      scene.components.arjs.arSession.resume()
-
-      AR.js should initialize itself.
+      Request permissions after the user taps the button.
+      AR.js itself starts the webcam session.
     */
     startBtn.addEventListener('click', async () => {
       permissionShield.style.display = 'none';
       uiLayer.style.display = 'block';
 
-      showDebugMessage('Start button pressed');
+      showDebugMessage('Starting AR experience...');
 
       /*
-        iOS Safari requires this request to happen
-        inside a user interaction.
+        Required by iOS Safari for motion sensors.
       */
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
@@ -274,33 +288,76 @@
           );
         }
       }
+
+      /*
+        Give AR.js time to create its video element,
+        then force the video to play.
+      */
+      setTimeout(startCameraVideo, 1500);
     });
+
+    function startCameraVideo() {
+      const video =
+        document.getElementById('arjs-video') ||
+        document.querySelector('video');
+
+      if (!video) {
+        showDebugMessage(
+          'Camera video element was not found.'
+        );
+
+        console.error(
+          'AR.js did not create a video element.'
+        );
+
+        return;
+      }
+
+      video.setAttribute('autoplay', '');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.muted = true;
+
+      video.style.display = 'block';
+      video.style.visibility = 'visible';
+      video.style.opacity = '1';
+
+      video.play()
+        .then(() => {
+          showDebugMessage('Camera video is playing.');
+        })
+        .catch(error => {
+          showDebugMessage(
+            'Camera video could not play.'
+          );
+
+          console.error(
+            'Camera video playback error:',
+            error
+          );
+        });
+
+      console.log('Camera video element:', video);
+    }
 
     /*
       Confirm that A-Frame has loaded.
     */
     scene.addEventListener('loaded', () => {
-      showDebugMessage('A-Frame scene loaded');
-
-      console.log('A-Frame scene:', scene);
-      console.log(
-        'Camera entity:',
-        cameraEntity
-      );
-      console.log(
-        'AR.js component:',
-        scene.components.arjs
-      );
+      console.log('A-Frame scene loaded.');
+      console.log('Camera entity:', cameraEntity);
+      console.log('AR.js component:', scene.components.arjs);
     });
 
     /*
-      Realign the map relative to the camera.
+      Realign the map relative to the current camera position.
     */
     realignBtn.addEventListener('click', () => {
       if (!cameraEntity || !turntable) {
         console.error(
-          'Camera or map entity is missing.'
+          'The camera or map entity is missing.'
         );
+
         return;
       }
 
@@ -316,7 +373,7 @@
         );
 
       /*
-        Put the map slightly below and in front
+        Keep the map slightly below and in front
         of the camera.
       */
       mapObject.position.set(
@@ -331,11 +388,11 @@
         0
       );
 
-      console.log('Map realigned');
+      console.log('Map realigned.');
     });
 
     /*
-      Report uncaught JavaScript errors.
+      Report JavaScript errors visibly and in the console.
     */
     window.addEventListener('error', event => {
       console.error(
@@ -344,7 +401,7 @@
       );
 
       showDebugMessage(
-        'JavaScript error: ' + event.message
+        'Error: ' + event.message
       );
     });
   </script>
