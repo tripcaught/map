@@ -2,37 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>175m Equal Earth WebAR Map</title>
     
-    <!-- Stable A-Frame Engine -->
+    <!-- Stable A-Frame Engine (v1.4.0) -->
     <script src="https://cloudflare.com"></script>
     
-    <!-- Stable AR Engine -->
+    <!-- Stable AR.js Engine -->
     <script src="https://githack.com"></script>
 
     <style>
-      .ui-container {
+      /* Fullscreen permission shield required by modern mobile browsers */
+      #permissionShield {
         position: fixed;
-        bottom: 30px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 9999;
-        width: 100%;
-        text-align: center;
-        pointer-events: none;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background-color: #111;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      .btn-start {
+        background-color: #28a745;
+        color: white; border: none; padding: 20px 40px;
+        font-size: 18px; font-weight: bold; border-radius: 30px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer;
+      }
+      /* Control overlay for field alignment */
+      .ui-container {
+        position: fixed; bottom: 30px; left: 50%;
+        transform: translateX(-50%); z-index: 9999;
+        width: 100%; text-align: center; pointer-events: none;
+        display: none; /* Hidden until camera starts */
       }
       .btn-realign {
         background-color: rgba(0, 122, 255, 0.9);
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        font-size: 16px;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: bold;
-        border-radius: 30px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        cursor: pointer;
+        color: white; border: none; padding: 15px 30px;
+        font-size: 16px; font-weight: bold; border-radius: 30px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;
         pointer-events: auto;
       }
     </style>
@@ -40,52 +50,75 @@
   
   <body style="margin: 0px; overflow: hidden;">
 
-    <div class="ui-container">
+    <!-- Initial Landing Screen to force user-gesture permission approval -->
+    <div id="permissionShield">
+      <h2 style="margin-bottom: 20px;">175m AR Field Map</h2>
+      <button id="startBtn" class="btn-start">Start AR Experience</button>
+      <p style="margin-top: 15px; font-size: 13px; color: #aaa;">Please allow camera & motion access when prompted.</p>
+    </div>
+
+    <!-- Alignment Interface Layer -->
+    <div id="uiLayer" class="ui-container">
       <button id="realignBtn" class="btn-realign">Realign the Map</button>
     </div>
 
-    <!-- WebAR Camera Scene Config -->
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+    <!-- WebAR Scene Setup -->
+    <a-scene 
+      embedded 
+      arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;"
+      vr-mode-ui="enabled: false">
       
-      <!-- Safe asset container pointing to your local repository directory -->
       <a-assets>
         <img id="equalEarthMap" src="worldmap.svg">
       </a-assets>
 
-      <!-- The Map Turntable Container -->
       
-        <!-- 
-          We use a fallback grid texture if 'worldmap.svg' isn't uploaded yet. 
-          Once you upload your file named 'worldmap.svg', it will overwrite the grid.
-        -->
         <a-plane 
           src="#equalEarthMap" 
           position="0 0 0" 
           rotation="-90 -26 0" 
           width="175" 
           height="85.37" 
-          material="transparent: true; opacity: 0.6; shader: flat; side: double; color: #007aff;">
+          material="transparent: true; opacity: 0.7; shader: flat; side: double;">
         </a-plane>
       
 
-      <!-- Smartphone Tracking Camera -->
-      
       
     </a-scene>
 
     <script>
-      const button = document.getElementById('realignBtn');
+      const startBtn = document.getElementById('startBtn');
+      const permissionShield = document.getElementById('permissionShield');
+      const uiLayer = document.getElementById('uiLayer');
+      const realignBtn = document.getElementById('realignBtn');
       const turntable = document.getElementById('mapTurntable');
       const cameraEntity = document.getElementById('userCamera');
 
-      button.addEventListener('click', () => {
+      // 1. Handle starting the AR environment via direct interaction
+      startBtn.addEventListener('click', () => {
+        // Remove the black landing screen overlay
+        permissionShield.style.display = 'none';
+        uiLayer.style.display = 'block';
+
+        // Explicitly request DeviceOrientation tokens for iOS 13+ devices
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          DeviceOrientationEvent.requestPermission()
+            .then(response => {
+              if (response == 'granted') {
+                window.location.reload(); // Reload once to register sensors if needed
+              }
+            })
+            .catch(console.error);
+        }
+      });
+
+      // 2. Realignment control logic
+      realignBtn.addEventListener('click', () => {
         const cameraRotation = cameraEntity.object3D.rotation;
         const currentFacingDegrees = cameraRotation.y * (180 / Math.PI);
         const camPosition = cameraEntity.object3D.position;
         
-        // Pin the map center right at your current feet position
         turntable.setAttribute('position', `${camPosition.x} 0 ${camPosition.z}`);
-        // Pivot the map to align with the field angle based on your view direction
         turntable.setAttribute('rotation', `0 ${currentFacingDegrees} 0`);
       });
     </script>
