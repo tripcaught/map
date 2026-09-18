@@ -2,9 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0,
-                 user-scalable=no">
+
+  <meta
+    name="viewport"
+    content="width=device-width,
+             initial-scale=1.0,
+             user-scalable=no,
+             minimum-scale=1.0,
+             maximum-scale=1.0">
 
   <title>175m Equal Earth WebAR Map</title>
 
@@ -17,53 +22,90 @@
   <style>
     html,
     body {
-      margin: 0;
-      overflow: hidden;
       width: 100%;
       height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, sans-serif;
     }
 
     #permissionShield {
       position: fixed;
       inset: 0;
-      background: #111;
       z-index: 99999;
+
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      color: white;
-      font-family: sans-serif;
+
+      color: #fff;
       text-align: center;
+      background: #111;
+    }
+
+    #permissionShield h2 {
+      margin-bottom: 10px;
+    }
+
+    #permissionShield p {
+      max-width: 320px;
+      margin: 0 20px 25px;
+      color: #aaa;
     }
 
     .btn-start,
     .btn-realign {
       border: 0;
-      color: white;
+      border-radius: 30px;
+      color: #fff;
       font-size: 18px;
       font-weight: bold;
-      border-radius: 30px;
       cursor: pointer;
     }
 
     .btn-start {
-      background: #28a745;
       padding: 20px 40px;
+      background: #28a745;
     }
 
-    .ui-container {
+    .btn-start:active,
+    .btn-realign:active {
+      transform: scale(0.96);
+    }
+
+    #uiLayer {
       position: fixed;
       bottom: 30px;
       left: 50%;
-      transform: translateX(-50%);
       z-index: 9999;
+
       display: none;
+      transform: translateX(-50%);
     }
 
     .btn-realign {
-      background: rgba(0, 122, 255, 0.9);
       padding: 15px 30px;
+      background: rgba(0, 122, 255, 0.9);
+    }
+
+    /*
+      This diagnostic label helps confirm that the page JavaScript
+      is running. It is not part of the AR scene.
+    */
+    #debugMessage {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10000;
+
+      display: none;
+      padding: 8px 10px;
+      color: white;
+      background: rgba(0, 0, 0, 0.65);
+      font-size: 12px;
     }
   </style>
 </head>
@@ -71,22 +113,30 @@
 <body>
   <div id="permissionShield">
     <h2>175m AR Field Map</h2>
-    <p>Tap below to launch the camera overlay.</p>
+
+    <p>
+      Tap below to launch your camera overlay.
+    </p>
+
     <button id="startBtn" class="btn-start">
       Start AR Experience
     </button>
   </div>
 
-  <div id="uiLayer" class="ui-container">
+  <div id="uiLayer">
     <button id="realignBtn" class="btn-realign">
       Realign the Map
     </button>
   </div>
 
+  <div id="debugMessage">
+    Initializing...
+  </div>
+
   <a-scene
     embedded
     vr-mode-ui="enabled: false"
-    renderer="antialias: true; alpha: true"
+    renderer="alpha: true; antialias: true"
     arjs="
       sourceType: webcam;
       debugUIEnabled: false;
@@ -103,112 +153,198 @@
         crossorigin="anonymous">
     </a-assets>
 
-    <!-- This entity is now available to the script -->
-    <a-entity id="mapTurntable" position="0 0 0">
+    <!--
+      RED DIAGNOSTIC CUBE
 
-    <a-plane
-    id="mapPlane"
-    position="0 0 0"
-    rotation="-90 0 0"
-    width="4"
-    height="1.95"
-    material="
-      shader: flat;
-      color: lime;
-      side: double;
-      transparent: true;
-      opacity: 0.9;
-    ">
-  </a-plane>
+      If you can see this cube, A-Frame and the camera
+      are rendering correctly.
+    -->
+    <a-box
+      id="testCube"
+      position="0 0 -3"
+      rotation="0 45 0"
+      width="0.5"
+      height="0.5"
+      depth="0.5"
+      color="#ff0000">
+    </a-box>
 
-    </a-entity>
+    <!--
+      Small SVG test map.
 
-    <!-- This entity is now available to the script -->
+      The map is deliberately small and placed three meters
+      in front of the camera. Do not use 175m dimensions
+      until this test works.
+    -->
     <a-entity
-      id="userCamera"
-      camera
-      look-controls="enabled: false">
+      id="mapTurntable"
+      position="0 0 -3">
+
+      <a-plane
+        id="mapPlane"
+        src="#equalEarthMap"
+        position="0 0 0"
+        rotation="-90 0 0"
+        width="4"
+        height="1.95"
+        material="
+          shader: flat;
+          transparent: true;
+          opacity: 0.9;
+          side: double;
+        ">
+      </a-plane>
+
     </a-entity>
+
+    <!-- Camera entity required by the JavaScript -->
+    <a-camera
+      id="userCamera"
+      position="0 0 0"
+      look-controls="enabled: false">
+    </a-camera>
 
   </a-scene>
 
   <script>
-    const startBtn = document.getElementById('startBtn');
+    const startBtn =
+      document.getElementById('startBtn');
+
     const permissionShield =
       document.getElementById('permissionShield');
-    const uiLayer = document.getElementById('uiLayer');
-    const realignBtn = document.getElementById('realignBtn');
-    const turntable = document.getElementById('mapTurntable');
-    const cameraEntity = document.getElementById('userCamera');
 
+    const uiLayer =
+      document.getElementById('uiLayer');
+
+    const realignBtn =
+      document.getElementById('realignBtn');
+
+    const turntable =
+      document.getElementById('mapTurntable');
+
+    const cameraEntity =
+      document.getElementById('userCamera');
+
+    const debugMessage =
+      document.getElementById('debugMessage');
+
+    const scene =
+      document.querySelector('a-scene');
+
+    function showDebugMessage(message) {
+      debugMessage.textContent = message;
+      debugMessage.style.display = 'block';
+      console.log(message);
+    }
+
+    /*
+      Request permissions only.
+
+      There is intentionally no manual call to:
+      scene.components.arjs.arSession.resume()
+
+      AR.js should initialize itself.
+    */
     startBtn.addEventListener('click', async () => {
       permissionShield.style.display = 'none';
       uiLayer.style.display = 'block';
 
-      // Required by iOS Safari for motion sensors.
+      showDebugMessage('Start button pressed');
+
+      /*
+        iOS Safari requires this request to happen
+        inside a user interaction.
+      */
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function'
       ) {
         try {
-          const result =
+          const response =
             await DeviceOrientationEvent.requestPermission();
 
-          if (result !== 'granted') {
-            console.warn('Motion permission was not granted.');
-          }
+          console.log(
+            'Motion permission response:',
+            response
+          );
         } catch (error) {
           console.error(
-            'Could not request motion permission:',
+            'Motion permission error:',
             error
           );
         }
       }
-
-      // Start AR.js after the user gesture.
-      const scene = document.querySelector('a-scene');
-
-      if (scene.hasLoaded) {
-        startCamera();
-      } else {
-        scene.addEventListener('loaded', startCamera, { once: true });
-      }
     });
 
-    function startCamera() {
-      const scene = document.querySelector('a-scene');
+    /*
+      Confirm that A-Frame has loaded.
+    */
+    scene.addEventListener('loaded', () => {
+      showDebugMessage('A-Frame scene loaded');
 
-      if (
-        scene.components &&
-        scene.components.arjs &&
-        scene.components.arjs.arSession
-      ) {
-        scene.components.arjs.arSession.resume();
-      }
-    }
+      console.log('A-Frame scene:', scene);
+      console.log(
+        'Camera entity:',
+        cameraEntity
+      );
+      console.log(
+        'AR.js component:',
+        scene.components.arjs
+      );
+    });
 
+    /*
+      Realign the map relative to the camera.
+    */
     realignBtn.addEventListener('click', () => {
-      const cameraObject = cameraEntity.object3D;
-      const mapObject = turntable.object3D;
+      if (!cameraEntity || !turntable) {
+        console.error(
+          'Camera or map entity is missing.'
+        );
+        return;
+      }
 
-      const cameraPosition = cameraObject.position;
-      const cameraRotation = cameraObject.rotation;
+      const cameraObject =
+        cameraEntity.object3D;
 
-      // Place the map at the user's current horizontal location.
+      const mapObject =
+        turntable.object3D;
+
+      const cameraPosition =
+        cameraObject.getWorldPosition(
+          new THREE.Vector3()
+        );
+
+      /*
+        Put the map slightly below and in front
+        of the camera.
+      */
       mapObject.position.set(
         cameraPosition.x,
-        0,
-        cameraPosition.z
+        cameraPosition.y - 1.5,
+        cameraPosition.z - 3
       );
-
-      // Use the camera's horizontal heading.
-      const headingDegrees =
-        THREE.MathUtils.radToDeg(cameraRotation.y);
 
       mapObject.rotation.set(
         0,
-        THREE.MathUtils.degToRad(headingDegrees),
+        cameraObject.rotation.y,
         0
+      );
+
+      console.log('Map realigned');
+    });
+
+    /*
+      Report uncaught JavaScript errors.
+    */
+    window.addEventListener('error', event => {
+      console.error(
+        'Page error:',
+        event.message
+      );
+
+      showDebugMessage(
+        'JavaScript error: ' + event.message
       );
     });
   </script>
