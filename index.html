@@ -167,70 +167,62 @@
       return true;
     }
 
-    async function startAR() {
-      const supported =
-        await checkWebXRSupport();
+async function startAR() {
+  const supported =
+    await checkWebXRSupport();
 
-      if (!supported) {
-        return;
-      }
+  if (!supported) {
+    return;
+  }
 
-      try {
-        xrSession =
-          await navigator.xr.requestSession(
-            'immersive-ar',
-            {
-              requiredFeatures: [
-                'hit-test',
-                'dom-overlay'
-              ],
-              domOverlay: {
-                root: document.body
-              }
-            }
-          );
+  try {
+    xrSession =
+      await navigator.xr.requestSession(
+        'immersive-ar',
+        {
+          requiredFeatures: [
+            'hit-test',
+            'dom-overlay'
+          ],
+          domOverlay: {
+            root: document.body
+          }
+        }
+      );
 
-        xrSession.addEventListener(
-          'end',
-          onSessionEnded
-        );
+    xrSession.addEventListener(
+      'end',
+      onSessionEnded
+    );
 
-        setupThreeJS();
+setupThreeJS();
 
-        referenceSpace =
-          await xrSession.requestReferenceSpace(
-            'local'
-          );
+await renderer.xr.setSession(xrSession);
 
-        viewerSpace =
-          await xrSession.requestReferenceSpace(
-            'viewer'
-          );
+referenceSpace =
+  await xrSession.requestReferenceSpace('local');
 
-        hitTestSource =
-          await xrSession.requestHitTestSource({
-            space: viewerSpace
-          });
+viewerSpace =
+  await xrSession.requestReferenceSpace('viewer');
 
-        startButton.style.display = 'none';
-        placeButton.style.display = 'block';
+hitTestSource =
+  await xrSession.requestHitTestSource({
+    space: viewerSpace
+  });
 
-        showMessage(
-          'Move the phone slowly until the green reticle appears.'
-        );
+renderer.setAnimationLoop(renderXRFrame);
 
-        xrSession.requestAnimationFrame(
-          onXRFrame
-        );
-      } catch (error) {
-        console.error('Could not start AR:', error);
+  } catch (error) {
+    console.error(
+      'Could not start WebXR AR:',
+      error
+    );
 
-        showMessage(
-          'Could not start AR: ' + error.message
-        );
-      }
-    }
-
+    showMessage(
+      'Could not start AR: ' + error.message
+    );
+  }
+}
     function setupThreeJS() {
       scene = new THREE.Scene();
 
@@ -350,74 +342,71 @@
       );
     }
 
-    function onXRFrame(time, frame) {
-      const session =
-        frame.session;
+function renderXRFrame(time, frame) {
+  const session = frame.session;
 
-      session.requestAnimationFrame(
-        onXRFrame
+  const pose =
+    frame.getViewerPose(referenceSpace);
+
+  if (!pose) {
+    return;
+  }
+
+  if (hitTestSource && !mapPlaced) {
+    const hitTestResults =
+      frame.getHitTestResults(
+        hitTestSource
       );
 
-      const pose =
-        frame.getViewerPose(
-          referenceSpace
+    if (hitTestResults.length > 0) {
+      const hit =
+        hitTestResults[0];
+
+      const hitPose =
+        hit.getPose(referenceSpace);
+
+      if (hitPose) {
+        latestHitPose = hitPose;
+
+        const position =
+          hitPose.transform.position;
+
+        const orientation =
+          hitPose.transform.orientation;
+
+        reticle.visible = true;
+
+        reticle.position.set(
+          position.x,
+          position.y,
+          position.z
         );
 
-      if (!pose) {
-        return;
+        reticle.quaternion.set(
+          orientation.x,
+          orientation.y,
+          orientation.z,
+          orientation.w
+        );
+
+        showMessage(
+          'Surface detected. Tap Place Map Here.'
+        );
       }
+    } else {
+      reticle.visible = false;
 
-      if (hitTestSource && !mapPlaced) {
-        const hitTestResults =
-          frame.getHitTestResults(
-            hitTestSource
-          );
-
-        if (hitTestResults.length > 0) {
-          const hit =
-            hitTestResults[0];
-
-          latestHitPose =
-            hit.getPose(referenceSpace);
-
-          const position =
-            latestHitPose.transform.position;
-
-          const orientation =
-            latestHitPose.transform.orientation;
-
-          reticle.visible = true;
-
-          reticle.position.set(
-            position.x,
-            position.y,
-            position.z
-          );
-
-          reticle.quaternion.set(
-            orientation.x,
-            orientation.y,
-            orientation.z,
-            orientation.w
-          );
-
-          showMessage(
-            'Floor detected. Tap Place Map Here.'
-          );
-        } else {
-          reticle.visible = false;
-
-          showMessage(
-            'Move the phone slowly to detect the floor.'
-          );
-        }
-      }
-
-      renderer.render(
-        scene,
-        camera
+      showMessage(
+        'Move the phone slowly to scan for a floor or table.'
       );
     }
+  }
+
+  renderer.render(
+    scene,
+    camera
+  );
+
 
     function placeMap() {
       if (!latestHitPose || !mapMesh) {
