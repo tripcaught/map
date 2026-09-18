@@ -1,18 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-
+  <meta charset="UTF-8" />
   <meta
     name="viewport"
-    content="width=device-width,
-             initial-scale=1.0,
-             maximum-scale=1.0,
-             user-scalable=no">
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
 
   <title>175m Equal Earth WebXR Map</title>
-
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
   <style>
     html,
@@ -21,209 +16,155 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: transparent;
-      font-family: Arial, sans-serif;
-    }
-
-    #startButton {
-      position: fixed;
-      z-index: 20;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-
-      padding: 18px 28px;
-      border: 0;
-      border-radius: 30px;
-
-      color: white;
-      background: #28a745;
-      font-size: 18px;
-      font-weight: bold;
-    }
-
-    #message {
-      position: fixed;
-      z-index: 20;
-      top: 15px;
-      left: 50%;
-      transform: translateX(-50%);
-
-      display: none;
-      width: calc(100% - 40px);
-      max-width: 500px;
-      padding: 10px;
-
-      color: white;
-      background: rgba(0, 0, 0, 0.7);
-      text-align: center;
-      box-sizing: border-box;
-    }
-
-    #placeButton {
-      position: fixed;
-      z-index: 20;
-      bottom: 30px;
-      left: 50%;
-      transform: translateX(-50%);
-
-      display: none;
-      padding: 15px 28px;
-      border: 0;
-      border-radius: 30px;
-
-      color: white;
-      background: rgba(0, 122, 255, 0.95);
-      font-size: 17px;
-      font-weight: bold;
+      font-family: sans-serif;
+      background: #111;
     }
 
     canvas {
-      position: fixed;
-      inset: 0;
       display: block;
+    }
+
+    #ui {
+      position: fixed;
+      z-index: 10;
+      top: 0;
+      left: 0;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 20px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #message {
+      display: inline-block;
+      max-width: 90%;
+      padding: 10px 14px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      font-size: 15px;
+    }
+
+    button {
+      display: block;
+      margin: 14px auto 0;
+      padding: 12px 18px;
+      border: 0;
+      border-radius: 8px;
+      background: #1976d2;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    #startButton {
+      margin-top: 20px;
+    }
+
+    #placeButton {
+      display: none;
+    }
+
+    #unsupported {
+      display: none;
+      color: white;
+      padding: 20px;
+      text-align: center;
     }
   </style>
 </head>
 
 <body>
-  <button id="startButton">
-    Start AR Experience
-  </button>
+  <div id="ui">
+    <div id="message">
+      Tap “Start AR Experience” to begin.
+    </div>
 
-  <div id="message"></div>
+    <button id="startButton">
+      Start AR Experience
+    </button>
 
-  <button id="placeButton">
-    Place Map Here
-  </button>
+    <button id="placeButton" disabled>
+      Place Map Here
+    </button>
 
-  <script>
-    const startButton =
-      document.getElementById('startButton');
+    <div id="unsupported">
+      WebXR immersive AR is not supported by this browser or device.
+    </div>
+  </div>
 
-    const placeButton =
-      document.getElementById('placeButton');
+  <script type="module">
+    import * as THREE from
+      "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
-    const messageElement =
-      document.getElementById('message');
+    import { ARButton } from
+      "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js";
 
-    let renderer;
-    let scene;
     let camera;
-
-    let xrSession = null;
-    let referenceSpace = null;
-    let viewerSpace = null;
-    let hitTestSource = null;
-
+    let scene;
+    let renderer;
+    let controller;
     let reticle;
     let mapMesh;
-    let mapPlaced = false;
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
     let latestHitPose = null;
+    let mapLoaded = false;
 
-    const MAP_WIDTH_METERS = 175;
-    const MAP_HEIGHT_METERS = 85.37;
+    const message = document.getElementById("message");
+    const startButton = document.getElementById("startButton");
+    const placeButton = document.getElementById("placeButton");
+    const unsupported = document.getElementById("unsupported");
 
     /*
-      The requested vertical offset.
+      Keep the map just above the detected surface.
 
-      A floor placement normally uses the hit-test floor position.
-      This offset moves the map 0.75 meters below that detected
-      surface. Set this to 0 if the map should sit on the floor.
+      A negative value, such as -0.75, places the map 75 cm below
+      the floor, which makes it appear to disappear.
     */
-    const MAP_VERTICAL_OFFSET = -0.75;
+    const MAP_VERTICAL_OFFSET = 0.01;
 
-    function showMessage(text) {
-      messageElement.textContent = text;
-      messageElement.style.display = 'block';
-    }
+    /*
+      The map image is assumed to represent approximately 175 m x 175 m.
+      Change this value if the SVG represents a different real-world size.
+    */
+    const MAP_SIZE_METERS = 175;
 
-    function hideMessage() {
-      messageElement.style.display = 'none';
-    }
+    init();
 
-    async function checkWebXRSupport() {
+    async function init() {
       if (!navigator.xr) {
-        showMessage(
-          'WebXR AR is not available in this browser.'
-        );
-
-        return false;
+        showUnsupported();
+        return;
       }
 
-      const supported =
-        await navigator.xr.isSessionSupported(
-          'immersive-ar'
-        );
+      let arSupported = false;
 
-      if (!supported) {
-        showMessage(
-          'This device or browser does not support immersive AR.'
+      try {
+        arSupported = await navigator.xr.isSessionSupported(
+          "immersive-ar"
         );
-
-        return false;
+      } catch (error) {
+        console.error("Unable to check WebXR support:", error);
       }
 
-      return true;
+      if (!arSupported) {
+        showUnsupported();
+        return;
+      }
+
+      createScene();
+      loadMap();
     }
 
-async function startAR() {
-  const supported =
-    await checkWebXRSupport();
-
-  if (!supported) {
-    return;
-  }
-
-  try {
-    xrSession =
-      await navigator.xr.requestSession(
-        'immersive-ar',
-        {
-          requiredFeatures: [
-            'hit-test',
-            'dom-overlay'
-          ],
-          domOverlay: {
-            root: document.body
-          }
-        }
-      );
-
-    xrSession.addEventListener(
-      'end',
-      onSessionEnded
-    );
-
-setupThreeJS();
-
-await renderer.xr.setSession(xrSession);
-
-referenceSpace =
-  await xrSession.requestReferenceSpace('local');
-
-viewerSpace =
-  await xrSession.requestReferenceSpace('viewer');
-
-hitTestSource =
-  await xrSession.requestHitTestSource({
-    space: viewerSpace
-  });
-
-renderer.setAnimationLoop(renderXRFrame);
-
-  } catch (error) {
-    console.error(
-      'Could not start WebXR AR:',
-      error
-    );
-
-    showMessage(
-      'Could not start AR: ' + error.message
-    );
-  }
-}
-    function setupThreeJS() {
+    function createScene() {
       scene = new THREE.Scene();
 
       camera = new THREE.PerspectiveCamera(
@@ -233,42 +174,31 @@ renderer.setAnimationLoop(renderXRFrame);
         1000
       );
 
-      renderer =
-        new THREE.WebGLRenderer({
-          alpha: true,
-          antialias: true
-        });
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true
+      });
 
-      renderer.setPixelRatio(
-        window.devicePixelRatio
-      );
-
-      renderer.setSize(
-        window.innerWidth,
-        window.innerHeight
-      );
-
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.xr.enabled = true;
+      renderer.setAnimationLoop(render);
 
-      document.body.appendChild(
-        renderer.domElement
-      );
+      document.body.appendChild(renderer.domElement);
 
       /*
-        Green reticle showing the detected floor position.
+        Reticle showing where the map can be placed.
       */
-      const reticleGeometry =
-        new THREE.RingGeometry(
-          0.08,
-          0.12,
-          32
-        );
+      const reticleGeometry = new THREE.RingGeometry(
+        0.15,
+        0.2,
+        32
+      );
 
-      const reticleMaterial =
-        new THREE.MeshBasicMaterial({
-          color: 0x00ff00,
-          side: THREE.DoubleSide
-        });
+      const reticleMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        side: THREE.DoubleSide
+      });
 
       reticle = new THREE.Mesh(
         reticleGeometry,
@@ -276,202 +206,255 @@ renderer.setAnimationLoop(renderXRFrame);
       );
 
       reticle.rotation.x = -Math.PI / 2;
+      reticle.matrixAutoUpdate = false;
       reticle.visible = false;
 
       scene.add(reticle);
 
-      window.addEventListener(
-        'resize',
-        onWindowResize
-      );
+      /*
+        Controller receives screen taps while in AR.
+      */
+      controller = renderer.xr.getController(0);
+      controller.addEventListener("select", onSelect);
+      scene.add(controller);
+
+      window.addEventListener("resize", onWindowResize);
+
+      startButton.addEventListener("click", startAR);
+      placeButton.addEventListener("click", placeMap);
     }
 
-    function createMap() {
-      const textureLoader =
-        new THREE.TextureLoader();
+    function loadMap() {
+      const textureLoader = new THREE.TextureLoader();
 
       textureLoader.load(
-        './worldmap.svg',
-        texture => {
-          texture.colorSpace =
-            THREE.SRGBColorSpace;
+        "./worldmap.svg",
 
-          const mapGeometry =
-            new THREE.PlaneGeometry(
-              MAP_WIDTH_METERS,
-              MAP_HEIGHT_METERS
-            );
-
-          const mapMaterial =
-            new THREE.MeshBasicMaterial({
-              map: texture,
-              transparent: true,
-              opacity: 0.7,
-              side: THREE.DoubleSide
-            });
-
-          mapMesh = new THREE.Mesh(
-            mapGeometry,
-            mapMaterial
-          );
+        function onLoad(texture) {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.wrapS = THREE.ClampToEdgeWrapping;
+          texture.wrapT = THREE.ClampToEdgeWrapping;
+          texture.needsUpdate = true;
 
           /*
-            Make the map horizontal.
+            The geometry lies in the XY plane by default.
+            It is rotated flat onto the ground during placement.
           */
-          mapMesh.rotation.x = -Math.PI / 2;
+          const geometry = new THREE.PlaneGeometry(
+            MAP_SIZE_METERS,
+            MAP_SIZE_METERS
+          );
+
+          const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: true
+          });
+
+          mapMesh = new THREE.Mesh(
+            geometry,
+            material
+          );
 
           mapMesh.visible = false;
-
           scene.add(mapMesh);
 
-          console.log(
-            'worldmap.svg loaded successfully.'
-          );
-        },
-        undefined,
-        error => {
-          console.error(
-            'Could not load worldmap.svg:',
-            error
-          );
+          mapLoaded = true;
+          placeButton.disabled = false;
 
           showMessage(
-            'Could not load worldmap.svg'
+            "Map loaded. Tap Start AR Experience."
+          );
+        },
+
+        undefined,
+
+        function onError(error) {
+          console.error("Could not load worldmap.svg:", error);
+
+          showMessage(
+            "The map image could not be loaded."
           );
         }
       );
     }
 
-function renderXRFrame(time, frame) {
-  const session = frame.session;
-
-  const pose =
-    frame.getViewerPose(referenceSpace);
-
-  if (!pose) {
-    return;
-  }
-
-  if (hitTestSource && !mapPlaced) {
-    const hitTestResults =
-      frame.getHitTestResults(
-        hitTestSource
-      );
-
-    if (hitTestResults.length > 0) {
-      const hit =
-        hitTestResults[0];
-
-      const hitPose =
-        hit.getPose(referenceSpace);
-
-      if (hitPose) {
-        latestHitPose = hitPose;
-
-        const position =
-          hitPose.transform.position;
-
-        const orientation =
-          hitPose.transform.orientation;
-
-        reticle.visible = true;
-
-        reticle.position.set(
-          position.x,
-          position.y,
-          position.z
-        );
-
-        reticle.quaternion.set(
-          orientation.x,
-          orientation.y,
-          orientation.z,
-          orientation.w
-        );
-
-        showMessage(
-          'Surface detected. Tap Place Map Here.'
-        );
-      }
-    } else {
-      reticle.visible = false;
-
-      showMessage(
-        'Move the phone slowly to scan for a floor or table.'
-      );
-    }
-  }
-
-  renderer.render(
-    scene,
-    camera
-  );
-
-
-    function placeMap() {
-      if (!latestHitPose || !mapMesh) {
-        showMessage(
-          'Wait until the floor reticle appears.'
-        );
-
+    async function startAR() {
+      if (!renderer) {
+        showMessage("AR is not available on this device.");
         return;
       }
 
-      const position =
-        latestHitPose.transform.position;
+      const sessionInit = {
+        requiredFeatures: [
+          "hit-test"
+        ],
+        optionalFeatures: [
+          "dom-overlay"
+        ],
+        domOverlay: {
+          root: document.getElementById("ui")
+        }
+      };
 
-      const orientation =
-        latestHitPose.transform.orientation;
+      try {
+        const session = await navigator.xr.requestSession(
+          "immersive-ar",
+          sessionInit
+        );
 
+        renderer.xr.setSession(session);
+
+        startButton.style.display = "none";
+        showMessage(
+          "Move your phone slowly until a horizontal surface is detected."
+        );
+
+        session.addEventListener("end", function() {
+          startButton.style.display = "block";
+          placeButton.style.display = "none";
+          reticle.visible = false;
+          latestHitPose = null;
+
+          if (mapMesh) {
+            mapMesh.visible = false;
+          }
+
+          showMessage(
+            "Tap “Start AR Experience” to begin again."
+          );
+        });
+      } catch (error) {
+        console.error("Could not start AR session:", error);
+
+        showMessage(
+          "AR could not be started. Make sure the page is served over HTTPS and that your browser supports WebXR."
+        );
+      }
+    }
+
+    function onSelect() {
+      if (latestHitPose && mapLoaded) {
+        placeMap();
+      }
+    }
+
+    function placeMap() {
+      if (!latestHitPose || !mapMesh) {
+        return;
+      }
+
+      const position = latestHitPose.transform.position;
+
+      /*
+        Place the map horizontally on the detected surface.
+        Do not apply the hit-test orientation directly because we want
+        the map to remain flat on the ground.
+      */
       mapMesh.position.set(
         position.x,
         position.y + MAP_VERTICAL_OFFSET,
         position.z
       );
 
-      /*
-        Use the detected floor orientation.
-        This keeps the map horizontal relative
-        to the detected real-world surface.
-      */
-      mapMesh.quaternion.set(
-        orientation.x,
-        orientation.y,
-        orientation.z,
-        orientation.w
+      mapMesh.rotation.set(
+        -Math.PI / 2,
+        0,
+        0
       );
 
-      /*
-        PlaneGeometry is vertical by default.
-        Rotate it horizontally after applying
-        the floor orientation.
-      */
-      mapMesh.rotateX(-Math.PI / 2);
-
       mapMesh.visible = true;
-      mapPlaced = true;
       reticle.visible = false;
-      placeButton.style.display = 'none';
+      placeButton.style.display = "none";
 
       showMessage(
-        'Map placed. Walk around it to inspect the 175m map.'
+        "Map placed. Walk around it to view it from different angles."
       );
     }
 
-    function onSessionEnded() {
-      xrSession = null;
-      hitTestSource = null;
-      referenceSpace = null;
-      viewerSpace = null;
+    function render(timestamp, frame) {
+      if (frame) {
+        const referenceSpace =
+          renderer.xr.getReferenceSpace();
 
-      if (renderer) {
-        renderer.xr.enabled = false;
-        renderer.domElement.remove();
+        const session =
+          renderer.xr.getSession();
+
+        if (!hitTestSourceRequested) {
+          session.requestReferenceSpace("viewer")
+            .then(function(referenceSpace) {
+              return session.requestHitTestSource({
+                space: referenceSpace
+              });
+            })
+            .then(function(source) {
+              hitTestSource = source;
+            })
+            .catch(function(error) {
+              console.error("Hit-test setup failed:", error);
+            });
+
+          session.addEventListener(
+            "end",
+            function() {
+              hitTestSourceRequested = false;
+              hitTestSource = null;
+            }
+          );
+
+          hitTestSourceRequested = true;
+        }
+
+        if (hitTestSource) {
+          const hitTestResults =
+            frame.getHitTestResults(hitTestSource);
+
+          if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+
+            latestHitPose =
+              hit.getPose(referenceSpace);
+
+            reticle.visible = true;
+            reticle.matrix.fromArray(
+              latestHitPose.transform.matrix
+            );
+
+            /*
+              This was the key missing line: the placement button
+              becomes visible after a surface is detected.
+            */
+            placeButton.style.display = "block";
+
+            if (mapLoaded) {
+              showMessage(
+                "Surface detected. Tap Place Map Here."
+              );
+            }
+          } else {
+            latestHitPose = null;
+            reticle.visible = false;
+            placeButton.style.display = "none";
+
+            showMessage(
+              "Move your phone slowly until a horizontal surface is detected."
+            );
+          }
+        }
       }
 
-      startButton.style.display = 'block';
-      placeButton.style.display = 'none';
-      hideMessage();
+      renderer.render(scene, camera);
+    }
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    function showUnsupported() {
+      startButton.style.display = "none";
+      unsupported.style.display = "block";
+      showMessage("");
     }
 
     function onWindowResize() {
@@ -480,8 +463,7 @@ function renderXRFrame(time, frame) {
       }
 
       camera.aspect =
-        window.innerWidth /
-        window.innerHeight;
+        window.innerWidth / window.innerHeight;
 
       camera.updateProjectionMatrix();
 
@@ -490,18 +472,6 @@ function renderXRFrame(time, frame) {
         window.innerHeight
       );
     }
-
-    startButton.addEventListener(
-      'click',
-      startAR
-    );
-
-    placeButton.addEventListener(
-      'click',
-      placeMap
-    );
-
-    createMap();
   </script>
 </body>
 </html>
