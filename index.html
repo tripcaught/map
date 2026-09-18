@@ -8,369 +8,143 @@
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
 
-  <title>Floor-Level Map Camera Overlay</title>
+  <title>AR.js Floor Map</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+  <!-- AR.js marker tracking -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
   <style>
     html,
     body {
-      width: 100%;
-      height: 100%;
       margin: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      background: #000;
+      background: transparent;
     }
 
-    #camera {
+    #instructions {
       position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-      z-index: 1;
-    }
-
-    /*
-      The map is three times larger than the original 90vmin size.
-    */
-    #mapContainer {
-      position: fixed;
-      z-index: 2;
+      z-index: 20;
+      top: 15px;
       left: 50%;
-      top: 62%;
+      transform: translateX(-50%);
 
-      width: 270vmin;
-      height: 270vmin;
-
-      opacity: 0.6;
-      pointer-events: none;
-
-      transform-style: preserve-3d;
-      perspective: 900px;
-
-      /*
-        rotateX makes the map appear to lie on the floor.
-        rotateY applies the requested -26-degree rotation.
-      */
-      transform:
-        translate(-50%, -50%)
-        rotateX(-90deg)
-        rotateY(0deg);
-    }
-
-    #map {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: fill;
-    }
-
-    #controls {
-      position: fixed;
-      z-index: 10;
-      left: 0;
-      right: 0;
-      bottom: 24px;
-      padding: 0 16px;
-      text-align: center;
-      pointer-events: auto;
-    }
-
-    #startButton {
-      display: inline-block;
-      padding: 14px 22px;
-      border: 0;
-      border-radius: 8px;
-      background: #1976d2;
-      color: white;
-      font: 16px sans-serif;
-      cursor: pointer;
-      -webkit-appearance: none;
-      appearance: none;
-    }
-
-    #startButton:disabled {
-      opacity: 0.6;
-      cursor: wait;
-    }
-
-    #message {
+      width: max-content;
       max-width: 90%;
-      margin: 12px auto 0;
-      padding: 8px 12px;
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.7);
+      box-sizing: border-box;
+
+      padding: 10px 14px;
+      border-radius: 8px;
+
       color: white;
-      font: 14px sans-serif;
+      background: rgba(0, 0, 0, 0.7);
+
+      font-family: sans-serif;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    #status {
+      margin-top: 5px;
+      color: #bde7ff;
     }
   </style>
 </head>
 
 <body>
-  <video
-    id="camera"
-    autoplay
-    playsinline
-    muted
-  ></video>
-
-  <div id="mapContainer">
-    <img
-      id="map"
-      src="./worldmap.svg"
-      alt="World map overlay"
-    >
-  </div>
-
-  <div id="controls">
-    <button
-      id="startButton"
-      type="button"
-    >
-      Start Camera
-    </button>
-
-    <div id="message">
-      Tap Start Camera and allow camera access.
+  <div id="instructions">
+    Point the camera at the Hiro marker.
+    <div id="status">
+      Waiting for marker...
     </div>
   </div>
 
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="
+      antialias: true;
+      alpha: true;
+      precision: medium;
+    "
+    arjs="
+      sourceType: webcam;
+      trackingMethod: best;
+      debugUIEnabled: false;
+    "
+  >
+    <!--
+      The Hiro marker is the physical reference point.
+
+      Change preset="hiro" to
+      type="pattern"
+      url="./my-marker.patt"
+      if you create a custom marker.
+    -->
+    <a-marker
+      id="mapMarker"
+      preset="hiro"
+      smooth="true"
+      smooth-count="10"
+      smooth-tolerance="0.01"
+      smooth-threshold="5"
+    >
+      <!--
+        The map is three times larger than the original version.
+
+        markerWidth is 1 AR unit, so this map is approximately
+        3 x 3 marker widths.
+
+        Position y="0.01" places it just above the marker plane.
+      -->
+      <a-plane
+        id="mapPlane"
+        src="./worldmap.svg"
+        position="0 0.01 0"
+        rotation="-90 -26 0"
+        width="3"
+        height="3"
+        material="
+          shader: flat;
+          transparent: true;
+          opacity: 0.75;
+          side: double;
+        "
+      >
+      </a-plane>
+
+      <!-- Optional small marker indicator -->
+      <a-ring
+        position="0 0.015 0"
+        rotation="-90 0 0"
+        radius-inner="0.12"
+        radius-outer="0.15"
+        color="#00ff00"
+        material="shader: flat; opacity: 0.8;"
+      >
+      </a-ring>
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+
   <script>
-    "use strict";
+    const marker = document.getElementById("mapMarker");
+    const status = document.getElementById("status");
 
-    const camera = document.getElementById("camera");
-    const mapContainer = document.getElementById("mapContainer");
-    const startButton = document.getElementById("startButton");
-    const message = document.getElementById("message");
+    marker.addEventListener("markerFound", () => {
+      status.textContent = "Marker found. Map is active.";
+      status.style.color = "#8cff8c";
+    });
 
-    let cameraStream = null;
-    let orientationStarted = false;
-
-    /*
-      These values are used to apply small orientation adjustments.
-    */
-    let heading = 0;
-    let pitch = 0;
-    let roll = 0;
-
-    /*
-      Attach the click listener after the page has loaded.
-      This preserves the required user gesture for camera permission.
-    */
-    startButton.addEventListener("click", startCamera);
-
-    async function startCamera() {
-      startButton.disabled = true;
-      setMessage("Requesting camera access...");
-
-      /*
-        Camera access only works from HTTPS, localhost, or a secure
-        browser environment.
-      */
-      if (
-        location.protocol !== "https:" &&
-        location.hostname !== "localhost" &&
-        location.hostname !== "127.0.0.1"
-      ) {
-        setMessage(
-          "Camera access requires HTTPS. Open this page using its GitHub Pages HTTPS address."
-        );
-
-        startButton.disabled = false;
-        return;
-      }
-
-      if (
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia
-      ) {
-        setMessage(
-          "This browser does not support camera access."
-        );
-
-        startButton.disabled = false;
-        return;
-      }
-
-      try {
-        /*
-          Request the rear-facing camera.
-        */
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: {
-              ideal: "environment"
-            },
-            width: {
-              ideal: 1920
-            },
-            height: {
-              ideal: 1080
-            }
-          },
-          audio: false
-        });
-
-        camera.srcObject = cameraStream;
-
-        /*
-          Wait until the video element has received camera data.
-        */
-        await camera.play();
-
-        /*
-          iOS requires a separate permission request for motion data.
-        */
-        await requestOrientationPermission();
-
-        setMessage(
-          "Camera active. Point your phone toward the floor."
-        );
-
-        startButton.style.display = "none";
-
-      } catch (error) {
-        console.error("Camera startup failed:", error);
-
-        showCameraError(error);
-
-        startButton.disabled = false;
-      }
-    }
-
-    async function requestOrientationPermission() {
-      if (
-        typeof DeviceOrientationEvent === "undefined"
-      ) {
-        return;
-      }
-
-      if (
-        typeof DeviceOrientationEvent.requestPermission ===
-        "function"
-      ) {
-        const permission =
-          await DeviceOrientationEvent.requestPermission();
-
-        if (permission !== "granted") {
-          setMessage(
-            "Camera is active, but motion permission was denied."
-          );
-
-          return;
-        }
-      }
-
-      if (!orientationStarted) {
-        window.addEventListener(
-          "deviceorientation",
-          handleOrientation,
-          true
-        );
-
-        orientationStarted = true;
-      }
-    }
-
-    function handleOrientation(event) {
-      heading = event.alpha || 0;
-      pitch = event.beta || 0;
-      roll = event.gamma || 0;
-
-      /*
-        68 degrees makes the image appear close to horizontal.
-
-        -26 degrees is the requested Y-axis rotation.
-
-        The small pitch and roll adjustments make the overlay
-        respond slightly as the phone moves.
-      */
-      const floorAngle =
-        68 + ((pitch - 45) * 0.15);
-
-      const sidewaysAngle =
-        -heading + (roll * 0.15);
-
-      mapContainer.style.transform = `
-        translate(-50%, -50%)
-        rotateX(${floorAngle}deg)
-        rotateY(-26deg)
-        rotateZ(${sidewaysAngle}deg)
-      `;
-    }
-
-    function showCameraError(error) {
-      if (!error) {
-        setMessage(
-          "Unable to start the camera."
-        );
-        return;
-      }
-
-      switch (error.name) {
-        case "NotAllowedError":
-        case "PermissionDeniedError":
-          setMessage(
-            "Camera permission was denied. Allow camera access in your browser settings, then reload the page."
-          );
-          break;
-
-        case "NotFoundError":
-        case "DevicesNotFoundError":
-          setMessage(
-            "No camera was found on this device."
-          );
-          break;
-
-        case "NotReadableError":
-        case "TrackStartError":
-          setMessage(
-            "The camera is already being used by another application."
-          );
-          break;
-
-        case "OverconstrainedError":
-          setMessage(
-            "The requested camera configuration is unavailable."
-          );
-          break;
-
-        case "SecurityError":
-          setMessage(
-            "The browser blocked camera access for security reasons. Use the HTTPS GitHub Pages URL."
-          );
-          break;
-
-        default:
-          setMessage(
-            "Camera error: " +
-            (error.message || error.name)
-          );
-      }
-    }
-
-    function setMessage(text) {
-      message.textContent = text;
-    }
-
-    /*
-      Stop the camera when the page is hidden.
-    */
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (
-          document.visibilityState === "hidden" &&
-          cameraStream
-        ) {
-          cameraStream.getTracks().forEach(track => {
-            track.stop();
-          });
-
-          cameraStream = null;
-        }
-      }
-    );
+    marker.addEventListener("markerLost", () => {
+      status.textContent = "Marker lost. Point the camera at it.";
+      status.style.color = "#ffcc80";
+    });
   </script>
 </body>
 </html>
