@@ -35,7 +35,250 @@
       width: 90vmin;
       height: 90vmin;
       transform: translate(-50%, -50%);
-      opacity: 0.55;
+      opacity: 0.55;<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <title>Horizontal Camera Map Overlay</title>
+
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+
+    /*
+      Live rear-camera video.
+    */
+    #camera {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+      background: black;
+    }
+
+    /*
+      The map is three times larger than the original 90vmin size.
+      270vmin may extend well beyond the screen, which is intentional.
+    */
+    #mapContainer {
+      position: fixed;
+      left: 50%;
+      top: 62%;
+
+      width: 270vmin;
+      height: 270vmin;
+
+      z-index: 2;
+      pointer-events: none;
+
+      /*
+        This creates a 3D projection for the flat map.
+        rotateX makes the map appear horizontal on the floor.
+        rotateY(-26deg) rotates it around the vertical Y axis.
+      */
+      transform-style: preserve-3d;
+      perspective: 900px;
+      transform:
+        translate(-50%, -50%)
+        rotateX(68deg)
+        rotateY(-26deg);
+
+      opacity: 0.6;
+    }
+
+    #map {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+    }
+
+    #controls {
+      position: fixed;
+      z-index: 3;
+      left: 0;
+      right: 0;
+      bottom: 25px;
+      text-align: center;
+    }
+
+    button {
+      padding: 12px 18px;
+      border: 0;
+      border-radius: 8px;
+      background: #1976d2;
+      color: white;
+      font-size: 16px;
+    }
+
+    #message {
+      margin-top: 10px;
+      color: white;
+      font-family: sans-serif;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <video
+    id="camera"
+    autoplay
+    playsinline
+    muted
+  ></video>
+
+  <div id="mapContainer">
+    <img
+      id="map"
+      src="./worldmap.svg"
+      alt="World map overlay"
+    >
+  </div>
+
+  <div id="controls">
+    <button id="startButton">
+      Start Camera
+    </button>
+
+    <div id="message"></div>
+  </div>
+
+  <script>
+    const camera = document.getElementById("camera");
+    const mapContainer = document.getElementById("mapContainer");
+    const startButton = document.getElementById("startButton");
+    const message = document.getElementById("message");
+
+    let cameraStream = null;
+
+    /*
+      Current phone orientation values.
+    */
+    let heading = 0;
+    let pitch = 0;
+    let roll = 0;
+
+    startButton.addEventListener("click", startCamera);
+
+    async function startCamera() {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: {
+              ideal: "environment"
+            }
+          },
+          audio: false
+        });
+
+        camera.srcObject = cameraStream;
+
+        /*
+          iOS requires explicit permission before orientation data
+          can be used.
+        */
+        if (
+          typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function"
+        ) {
+          const permission =
+            await DeviceOrientationEvent.requestPermission();
+
+          if (permission !== "granted") {
+            message.textContent =
+              "Motion permission was not granted.";
+          } else {
+            startOrientationTracking();
+          }
+        } else {
+          startOrientationTracking();
+        }
+
+        startButton.style.display = "none";
+        message.textContent =
+          "Map overlay active. Point the camera toward the floor.";
+
+      } catch (error) {
+        console.error("Camera error:", error);
+
+        message.textContent =
+          "Camera access failed. Use HTTPS and allow camera access.";
+      }
+    }
+
+    function startOrientationTracking() {
+      window.addEventListener(
+        "deviceorientation",
+        handleOrientation,
+        true
+      );
+    }
+
+    function handleOrientation(event) {
+      /*
+        alpha: compass heading, 0–360 degrees
+        beta: front/back tilt
+        gamma: left/right tilt
+      */
+      heading = event.alpha || 0;
+      pitch = event.beta || 0;
+      roll = event.gamma || 0;
+
+      /*
+        The map remains approximately horizontal at floor level.
+
+        rotateX(68deg):
+          Makes the map appear to lie on the floor.
+
+        rotateY(-26deg):
+          Applies the requested Y-axis rotation.
+
+        rotateZ(-heading):
+          Rotates the overlay in response to phone compass heading.
+
+        The small pitch and roll adjustments allow the map to respond
+        to movement of the phone.
+      */
+      mapContainer.style.transform = `
+        translate(-50%, -50%)
+        rotateX(${68 + (pitch - 45) * 0.15}deg)
+        rotateY(-26deg)
+        rotateZ(${-heading + roll * 0.15}deg)
+      `;
+    }
+
+    /*
+      Stop the camera if the page is hidden.
+    */
+    document.addEventListener("visibilitychange", () => {
+      if (
+        document.visibilityState === "hidden" &&
+        cameraStream
+      ) {
+        cameraStream.getTracks().forEach(track => {
+          track.stop();
+        });
+      }
+    });
+  </script>
+</body>
+</html>
+
       z-index: 2;
       pointer-events: none;
     }
