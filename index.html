@@ -1,141 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    <title>175m Equal Earth WebAR Map</title>
-    
-    <!-- Production-grade A-Frame (v1.3.0 provides the most stable WebAR camera hooks) -->
-    <script src="https://unpkg.com"></script>
-    
-    <!-- Official AR.js build for A-Frame (handles pure visual SLAM camera passthrough) -->
-    <script src="https://unpkg.com"></script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0,
+                 user-scalable=no">
 
-    <style>
-      /* Fullscreen dark overlay to handle mobile user-interaction requirements safely */
-      #permissionShield {
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-color: #111111;
-        z-index: 99999;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        color: #ffffff;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      }
-      .btn-start {
-        background-color: #28a745;
-        color: white; border: none; padding: 20px 40px;
-        font-size: 18px; font-weight: bold; border-radius: 30px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer;
-        transition: transform 0.1s;
-      }
-      .btn-start:active {
-        transform: scale(0.95);
-      }
-      /* Map alignment controls overlay */
-      .ui-container {
-        position: fixed; bottom: 30px; left: 50%;
-        transform: translateX(-50%); z-index: 9999;
-        width: 100%; text-align: center; pointer-events: none;
-        display: none; /* Stays hidden until camera permissions pass */
-      }
-      .btn-realign {
-        background-color: rgba(0, 122, 255, 0.9);
-        color: white; border: none; padding: 15px 30px;
-        font-size: 16px; font-weight: bold; border-radius: 30px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;
-        pointer-events: auto;
-      }
-    </style>
-  </head>
-  
-  <body style="margin: 0px; overflow: hidden;">
+  <title>175m Equal Earth WebAR Map</title>
 
-    <!-- Permission Interaction Layer -->
-    <div id="permissionShield">
-      <h2 style="margin-bottom: 10px;">175m AR Field Map</h2>
-      <p style="margin-bottom: 25px; color: #aaa; text-align: center; padding: 0 20px;">Tap below to launch your camera overlay.</p>
-      <button id="startBtn" class="btn-start">Start AR Experience</button>
-    </div>
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
 
-    <!-- Alignment Button Layer -->
-    <div id="uiLayer" class="ui-container">
-      <button id="realignBtn" class="btn-realign">Realign the Map</button>
-    </div>
+  <!-- AR.js for A-Frame -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
-    <!-- 
-      WebAR Environment Scene. 
-      - sourceWidth/Height locks the tracking pipeline into high performance standard resolutions.
-    -->
-    <a-scene 
-      embedded 
-      arjs="sourceType: webcam; debugUIEnabled: false; sourceWidth:1280; sourceHeight:720; displayWidth:1280; displayHeight:720;"
-      vr-mode-ui="enabled: false">
-      
-      <!-- Preload the SVG map from your local repository folder -->
-      <a-assets>
-        <img id="equalEarthMap" src="worldmap.svg">
-      </a-assets>
+  <style>
+    html,
+    body {
+      margin: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+    }
 
-      <!-- The Turntable Container that handles custom compass spin shifts -->
-      
-        <!-- Flipped flat, adjusted to your -26 degree field edge skew, scaled to 175m -->
-        <a-plane 
-          src="#equalEarthMap" 
-          position="0 0 0" 
-          rotation="-90 -26 0" 
-          width="175" 
-          height="85.37" 
-          material="transparent: true; opacity: 0.7; shader: flat; side: double;">
-        </a-plane>
-      
+    #permissionShield {
+      position: fixed;
+      inset: 0;
+      background: #111;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
 
-      <!-- Virtual User Tracking Camera Entity -->
-      
-      
-    </a-scene>
+    .btn-start,
+    .btn-realign {
+      border: 0;
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+    }
 
-    <script>
-      const startBtn = document.getElementById('startBtn');
-      const permissionShield = document.getElementById('permissionShield');
-      const uiLayer = document.getElementById('uiLayer');
-      const realignBtn = document.getElementById('realignBtn');
-      const turntable = document.getElementById('mapTurntable');
-      const cameraEntity = document.getElementById('userCamera');
+    .btn-start {
+      background: #28a745;
+      padding: 20px 40px;
+    }
 
-      // 1. Force mobile browser engine activation on user gesture click
-      startBtn.addEventListener('click', () => {
-        // Clear the overlay to unblock the view
-        permissionShield.style.display = 'none';
-        uiLayer.style.display = 'block';
+    .ui-container {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: none;
+    }
 
-        // Direct programmatic fallback hook for native iOS / Apple Safari motion tokens
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-          DeviceOrientationEvent.requestPermission()
-            .then(response => {
-              console.log('Motion sensor access configuration response: ' + response);
-            })
-            .catch(error => {
-              console.error('Sensor integration failed: ', error);
-            });
+    .btn-realign {
+      background: rgba(0, 122, 255, 0.9);
+      padding: 15px 30px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="permissionShield">
+    <h2>175m AR Field Map</h2>
+    <p>Tap below to launch the camera overlay.</p>
+    <button id="startBtn" class="btn-start">
+      Start AR Experience
+    </button>
+  </div>
+
+  <div id="uiLayer" class="ui-container">
+    <button id="realignBtn" class="btn-realign">
+      Realign the Map
+    </button>
+  </div>
+
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="antialias: true; alpha: true"
+    arjs="
+      sourceType: webcam;
+      debugUIEnabled: false;
+      sourceWidth: 1280;
+      sourceHeight: 720;
+      displayWidth: 1280;
+      displayHeight: 720;
+    ">
+
+    <a-assets>
+      <img
+        id="equalEarthMap"
+        src="./worldmap.svg"
+        crossorigin="anonymous">
+    </a-assets>
+
+    <!-- This entity is now available to the script -->
+    <a-entity id="mapTurntable" position="0 0 0">
+
+      <a-plane
+        id="mapPlane"
+        src="#equalEarthMap"
+        position="0 0 0"
+        rotation="-90 -26 0"
+        width="175"
+        height="85.37"
+        material="
+          shader: flat;
+          transparent: true;
+          opacity: 0.7;
+          side: double;
+        ">
+      </a-plane>
+
+    </a-entity>
+
+    <!-- This entity is now available to the script -->
+    <a-entity
+      id="userCamera"
+      camera
+      look-controls="enabled: false">
+    </a-entity>
+
+  </a-scene>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const permissionShield =
+      document.getElementById('permissionShield');
+    const uiLayer = document.getElementById('uiLayer');
+    const realignBtn = document.getElementById('realignBtn');
+    const turntable = document.getElementById('mapTurntable');
+    const cameraEntity = document.getElementById('userCamera');
+
+    startBtn.addEventListener('click', async () => {
+      permissionShield.style.display = 'none';
+      uiLayer.style.display = 'block';
+
+      // Required by iOS Safari for motion sensors.
+      if (
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+      ) {
+        try {
+          const result =
+            await DeviceOrientationEvent.requestPermission();
+
+          if (result !== 'granted') {
+            console.warn('Motion permission was not granted.');
+          }
+        } catch (error) {
+          console.error(
+            'Could not request motion permission:',
+            error
+          );
         }
-      });
+      }
 
-      // 2. Realignment mathematical alignment engine calculation
-      realignBtn.addEventListener('click', () => {
-        if (!cameraEntity) return;
-        const cameraRotation = cameraEntity.object3D.rotation;
-        const currentFacingDegrees = cameraRotation.y * (180 / Math.PI);
-        const camPosition = cameraEntity.object3D.position;
-        
-        // Match center origin directly to user's footsteps coordinates
-        turntable.setAttribute('position', `${camPosition.x} 0 ${camPosition.z}`);
-        // Pivot the map canvas grid layout to conform to the field alignment
-        turntable.setAttribute('rotation', `0 ${currentFacingDegrees} 0`);
-      });
-    </script>
-  </body>
+      // Start AR.js after the user gesture.
+      const scene = document.querySelector('a-scene');
+
+      if (scene.hasLoaded) {
+        startCamera();
+      } else {
+        scene.addEventListener('loaded', startCamera, { once: true });
+      }
+    });
+
+    function startCamera() {
+      const scene = document.querySelector('a-scene');
+
+      if (
+        scene.components &&
+        scene.components.arjs &&
+        scene.components.arjs.arSession
+      ) {
+        scene.components.arjs.arSession.resume();
+      }
+    }
+
+    realignBtn.addEventListener('click', () => {
+      const cameraObject = cameraEntity.object3D;
+      const mapObject = turntable.object3D;
+
+      const cameraPosition = cameraObject.position;
+      const cameraRotation = cameraObject.rotation;
+
+      // Place the map at the user's current horizontal location.
+      mapObject.position.set(
+        cameraPosition.x,
+        0,
+        cameraPosition.z
+      );
+
+      // Use the camera's horizontal heading.
+      const headingDegrees =
+        THREE.MathUtils.radToDeg(cameraRotation.y);
+
+      mapObject.rotation.set(
+        0,
+        THREE.MathUtils.degToRad(headingDegrees),
+        0
+      );
+    });
+  </script>
+</body>
 </html>
