@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>175m Equal Earth WebAR Map</title>
+    
+    <!-- Core A-Frame framework for 3D/VR rendering -->
+    <script src="https://aframe.io"></script>
+    
+    <!-- AR.js extension for smartphone camera SLAM tracking -->
+    <script src="https://githack.com"></script>
+
+    <style>
+      /* Styles for the interactive realign button layer */
+      .ui-container {
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        width: 100%;
+        text-align: center;
+        pointer-events: none;
+      }
+      .btn-realign {
+        background-color: rgba(0, 122, 255, 0.9);
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-weight: bold;
+        border-radius: 30px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        cursor: pointer;
+        pointer-events: auto;
+        transition: background-color 0.2s, transform 0.1s;
+      }
+      .btn-realign:active {
+        background-color: rgba(0, 100, 210, 1);
+        transform: scale(0.95);
+      }
+    </style>
+  </head>
+  
+  <body style="margin: 0px; overflow: hidden;">
+
+    <!-- Interactive On-Screen Button Layout -->
+    <div class="ui-container">
+      <button id="realignBtn" class="btn-realign">Realign the Map</button>
+    </div>
+
+    <!-- The WebAR Scene -->
+    <a-scene 
+      embedded 
+      arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;">
+      
+      <!-- Preload the dynamic global Equal Earth projection map source -->
+      <a-assets>
+        <img 
+          id="equalEarthSimpleMap" 
+          src="https://wikimedia.org" 
+          crossorigin="anonymous">
+      </a-assets>
+
+      <!-- 
+        The Rigging Container: Acts as a digital turntable. 
+        When the user hits the button, this container spins to align the map.
+      -->
+      
+        <!-- 
+          The Map Asset: Flipped flat (-90) and pre-rotated to your field's -26 degree offset.
+          Scaled to match the 175m width and scientific 2.05:1 height ratio.
+        -->
+        <a-plane 
+          src="#equalEarthSimpleMap" 
+          position="0 0 0" 
+          rotation="-90 -26 0" 
+          width="175" 
+          height="85.37" 
+          material="transparent: true; opacity: 0.75; shader: flat;">
+        </a-plane>
+      
+
+      <!-- Smartphone POV Tracking Camera Element -->
+      
+      
+    </a-scene>
+
+    <!-- JavaScript to manage the alignment math logic -->
+    <script>
+      const button = document.getElementById('realignBtn');
+      const turntable = document.getElementById('mapTurntable');
+      const cameraEntity = document.getElementById('userCamera');
+
+      button.addEventListener('click', () => {
+        // 1. Get the current direction the smartphone camera is pointing (in radians)
+        const cameraRotation = cameraEntity.object3D.rotation;
+        
+        // 2. Convert the horizontal Y-axis direction into readable degrees
+        const currentFacingDegrees = cameraRotation.y * (180 / Math.PI);
+        
+        // 3. Move the map's center position right under the user's current physical steps
+        const camPosition = cameraEntity.object3D.position;
+        turntable.setAttribute('position', `${camPosition.x} 0 ${camPosition.z}`);
+        
+        // 4. Spin the parent element so the map squares up to the user's forward view
+        turntable.setAttribute('rotation', `0 ${currentFacingDegrees} 0`);
+      });
+    </script>
+  </body>
+</html>
