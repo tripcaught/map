@@ -13,17 +13,50 @@
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-  <!-- AR.js marker tracking -->
+  <!-- AR.js -->
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
   <style>
     html,
     body {
-      margin: 0;
       width: 100%;
       height: 100%;
+      margin: 0;
       overflow: hidden;
-      background: transparent;
+      background: black;
+    }
+
+    /*
+      AR.js creates the camera video dynamically.
+      contain prevents the video from being cropped and
+      appearing excessively zoomed in.
+    */
+    video,
+    #arjs-video {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+
+      width: 100% !important;
+      height: 100% !important;
+
+      object-fit: contain !important;
+      background: black;
+    }
+
+    /*
+      Keep the A-Frame canvas aligned with the camera feed.
+    */
+    canvas.a-canvas {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+
+      width: 100% !important;
+      height: 100% !important;
+
+      background: transparent !important;
+      pointer-events: none;
     }
 
     #instructions {
@@ -41,16 +74,39 @@
       border-radius: 8px;
 
       color: white;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.72);
 
       font-family: sans-serif;
       font-size: 14px;
+      line-height: 1.4;
       text-align: center;
     }
 
     #status {
       margin-top: 5px;
       color: #bde7ff;
+    }
+
+    #zoomControls {
+      position: fixed;
+      z-index: 20;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+
+      display: flex;
+      gap: 8px;
+    }
+
+    #zoomControls button {
+      padding: 10px 15px;
+      border: 0;
+      border-radius: 7px;
+
+      color: white;
+      background: rgba(0, 0, 0, 0.72);
+
+      font-size: 15px;
     }
   </style>
 </head>
@@ -63,51 +119,76 @@
     </div>
   </div>
 
+  <!--
+    The zoom buttons change the displayed map size.
+    They do not change the phone camera's optical zoom.
+  -->
+  <div id="zoomControls">
+    <button id="smallerButton" type="button">
+      Map −
+    </button>
+
+    <button id="largerButton" type="button">
+      Map +
+    </button>
+  </div>
+
   <a-scene
     embedded
     vr-mode-ui="enabled: false"
+
     renderer="
       antialias: true;
       alpha: true;
       precision: medium;
     "
+
     arjs="
       sourceType: webcam;
       trackingMethod: best;
       debugUIEnabled: false;
+
+      sourceWidth: 1280;
+      sourceHeight: 720;
+      displayWidth: 1280;
+      displayHeight: 720;
     "
   >
     <!--
-      The Hiro marker is the physical reference point.
+      This uses the standard Hiro marker.
 
-      Change preset="hiro" to
-      type="pattern"
-      url="./my-marker.patt"
-      if you create a custom marker.
+      Print or display:
+      https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/HIRO.jpg
     -->
     <a-marker
       id="mapMarker"
       preset="hiro"
+
       smooth="true"
       smooth-count="10"
       smooth-tolerance="0.01"
       smooth-threshold="5"
     >
       <!--
-        The map is three times larger than the original version.
+        The map is three times the marker width.
 
-        markerWidth is 1 AR unit, so this map is approximately
-        3 x 3 marker widths.
+        position:
+          y="0.01" places it slightly above the marker.
 
-        Position y="0.01" places it just above the marker plane.
+        rotation:
+          -90 degrees on X places it horizontally on the floor.
+          -26 degrees on Y applies the requested rotation.
       -->
       <a-plane
         id="mapPlane"
         src="./worldmap.svg"
+
         position="0 0.01 0"
         rotation="-90 -26 0"
+
         width="3"
         height="3"
+
         material="
           shader: flat;
           transparent: true;
@@ -117,14 +198,20 @@
       >
       </a-plane>
 
-      <!-- Optional small marker indicator -->
+      <!-- Optional marker-location indicator -->
       <a-ring
         position="0 0.015 0"
         rotation="-90 0 0"
+
         radius-inner="0.12"
         radius-outer="0.15"
+
         color="#00ff00"
-        material="shader: flat; opacity: 0.8;"
+
+        material="
+          shader: flat;
+          opacity: 0.8;
+        "
       >
       </a-ring>
     </a-marker>
@@ -134,16 +221,118 @@
 
   <script>
     const marker = document.getElementById("mapMarker");
+    const mapPlane = document.getElementById("mapPlane");
     const status = document.getElementById("status");
 
+    const smallerButton =
+      document.getElementById("smallerButton");
+
+    const largerButton =
+      document.getElementById("largerButton");
+
+    /*
+      Current map size relative to the Hiro marker.
+
+      3 means the map is three marker-widths wide.
+    */
+    let mapSize = 3;
+
     marker.addEventListener("markerFound", () => {
-      status.textContent = "Marker found. Map is active.";
+      status.textContent =
+        "Marker found. Map is active.";
+
       status.style.color = "#8cff8c";
     });
 
     marker.addEventListener("markerLost", () => {
-      status.textContent = "Marker lost. Point the camera at it.";
+      status.textContent =
+        "Marker lost. Point the camera at it.";
+
       status.style.color = "#ffcc80";
+    });
+
+    /*
+      These buttons change the apparent map size.
+    */
+    smallerButton.addEventListener("click", () => {
+      mapSize = Math.max(0.5, mapSize - 0.5);
+
+      mapPlane.setAttribute("width", mapSize);
+      mapPlane.setAttribute("height", mapSize);
+    });
+
+    largerButton.addEventListener("click", () => {
+      mapSize += 0.5;
+
+      mapPlane.setAttribute("width", mapSize);
+      mapPlane.setAttribute("height", mapSize);
+    });
+
+    /*
+      AR.js creates the video element after the scene starts.
+      This function requests the minimum available camera zoom,
+      where supported by the browser and device.
+    */
+    async function setMinimumCameraZoom() {
+      const video =
+        document.querySelector("#arjs-video") ||
+        document.querySelector("video");
+
+      if (!video || !video.srcObject) {
+        return;
+      }
+
+      const tracks =
+        video.srcObject.getVideoTracks();
+
+      if (!tracks.length) {
+        return;
+      }
+
+      const track = tracks[0];
+      const capabilities =
+        track.getCapabilities
+          ? track.getCapabilities()
+          : {};
+
+      if (
+        capabilities.zoom &&
+        typeof capabilities.zoom.min === "number"
+      ) {
+        try {
+          await track.applyConstraints({
+            advanced: [
+              {
+                zoom: capabilities.zoom.min
+              }
+            ]
+          });
+
+          console.log(
+            "Camera zoom set to minimum:",
+            capabilities.zoom.min
+          );
+        } catch (error) {
+          console.warn(
+            "Could not set camera zoom:",
+            error
+          );
+        }
+      } else {
+        console.log(
+          "This camera does not expose zoom controls."
+        );
+      }
+    }
+
+    /*
+      Wait for AR.js to create and initialize the camera,
+      then attempt to set minimum hardware zoom.
+    */
+    window.addEventListener("load", () => {
+      setTimeout(() => {
+        setMinimumCameraZoom();
+      }, 3000);
     });
   </script>
 </body>
